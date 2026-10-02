@@ -1,0 +1,95 @@
+name: BDR CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  schedule:
+    - cron: "0 3 * * 0"      # Every Sunday at 03:00 UTC
+  workflow_dispatch:          # Manual trigger button
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint and validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Create .env from template
+        run: cp .env.example .env
+
+      - name: ShellCheck all scripts
+        run: shellcheck --severity=warning backup/scripts/*.sh
+
+      - name: Validate docker-compose.yml
+        run: docker compose config --quiet
+
+  dr-drill:
+    name: Backup and DR drill
+    needs: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Create .env from template
+        run: |
+          cp .env.example .env
+          mkdir -p backups
+
+      - name: Build backup image
+        run: docker compose build backup
+
+      - name: Start PostgreSQL and MinIO
+        run: docker compose up -d --wait postgres minio
+
+      - name: Run one backup
+        run: docker compose run --rm --no-deps --entrypoint /scripts/backup.sh backup
+
+      - name: Confirm backup reached MinIO
+        run: |
+          docker compose run --rm --no-deps --entrypoint bash backup -c '
+            mc alias set bdr "$MINIO_ENDPOINT" "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" > /dev/null
+            mc ls bdr/db-backups/shopdb/
+            test "$(mc ls bdr/db-backups/shopdb/ | wc -l)" -ge 2
+          '
+
+      - name: Run DR drill (destroy, restore, verify)
+        run: docker compose run --rm --no-deps --entrypoint /scripts/dr-drill.sh backup --yes
+
+      - name: Assert the drill passed
+        run: |
+          cat backups/dr-drill-history.csv
+          tail -n 1 backups/dr-drill-history.csv | grep -q ',PASS,'
+
+      - name: Publish drill result to run summary
+        if: always()
+        run: |
+          {
+            echo '### DR drill history'
+            echo '```'
+            cat backups/dr-drill-history.csv 2>/dev/null || echo "no drill history"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Save drill history as an artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dr-drill-history
+          path: backups/dr-drill-history.csv
+          if-no-files-found: ignore
+
+      - name: Show container logs on failure
+        if: failure()
+        run: docker compose logs --no-color
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
