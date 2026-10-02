@@ -56,8 +56,8 @@ jobs:
         run: |
           docker compose run --rm --no-deps --entrypoint bash backup -c '
             mc alias set bdr "$MINIO_ENDPOINT" "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" > /dev/null
-            mc ls bdr/db-backups/shopdb/
-            test "$(mc ls bdr/db-backups/shopdb/ | wc -l)" -ge 2
+            mc ls bdr/safe-vault/core_db/
+            test "$(mc ls bdr/safe-vault/core_db/ | wc -l)" -ge 2
           '
 
       - name: Run DR drill (destroy, restore, verify)
