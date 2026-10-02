@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BUCKET="${MINIO_BUCKET:-db-backups}"
+BUCKET="${MINIO_BUCKET:-safe-vault}"
 REMOTE="bdr/${BUCKET}/${PGDATABASE}"
 RESTORE_DIR="$(mktemp -d)"
 

@@ -3,7 +3,7 @@ set -euo pipefail
 
 BACKUP_DIR="/backups"
 RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-7}"
-BUCKET="${MINIO_BUCKET:-db-backups}"
+BUCKET="${MINIO_BUCKET:-safe-vault}"
 REMOTE="bdr/${BUCKET}/${PGDATABASE}"
 TIMESTAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 FILE="${PGDATABASE}_${TIMESTAMP}.sql.gz"

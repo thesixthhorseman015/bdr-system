@@ -2,7 +2,7 @@ services:
 
   postgres:
     image: postgres:16
-    container_name: bdr-postgres
+    container_name: app-postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
@@ -19,11 +19,28 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - bdr-net
+      - app-network
+
+  minio:
+    image: cgr.dev/chainguard/minio:latest
+    container_name: s3-storage
+    restart: unless-stopped
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    networks:
+      - app-network
+
   backup:
     build:
       context: ./backup
-    container_name: bdr-backup
+    container_name: recovery-worker
     restart: unless-stopped
     environment:
       PGHOST: postgres
@@ -34,7 +51,7 @@ services:
       MINIO_ENDPOINT: http://minio:9000
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
-      MINIO_BUCKET: db-backups
+      MINIO_BUCKET: safe-vault
       BACKUP_INTERVAL_SECONDS: 300
       BACKUP_RETENTION_DAYS: 7
     volumes:
@@ -43,27 +60,12 @@ services:
       postgres:
         condition: service_healthy
     networks:
-      - bdr-net
-  minio:
-    image: cgr.dev/chainguard/minio:latest
-    container_name: bdr-minio
-    restart: unless-stopped
-    command: ["server", "/data", "--console-address", ":9001"]
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
-    ports:
-      - "9000:9000"   # S3 API
-      - "9001:9001"   # Web console
-    volumes:
-      - minio_data:/data
-    networks:
-      - bdr-net
+      - app-network
 
 volumes:
   pg_data:
   minio_data:
 
 networks:
-  bdr-net:
+  app-network:
     driver: bridge
